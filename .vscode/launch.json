@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Launch main.exe",
+      "program": "${workspaceFolder}/src/main.exe",
+      "args": ["${input:serverPort}"],
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "Build main.exe",
+    }
+  ],
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "serverPort",
+      "description": "server port",
+    },
+  ],
+}

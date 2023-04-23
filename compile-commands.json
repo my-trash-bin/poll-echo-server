@@ -1,0 +1,7 @@
+[
+  {
+    "directory": "/path/to/your/project/",
+    "file": "anything.cpp",
+    "command": "clang++ -std=c++98 -Wall -Wextra -Werror -pedantic anything.cpp"
+  }
+]
