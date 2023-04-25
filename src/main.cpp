@@ -1,4 +1,5 @@
 #include <iostream>
+#include <new>
 #include <string>
 
 #include <cerrno>
@@ -12,10 +13,77 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-static void die(const std::string &message) {
-  std::cerr << message << std::endl;
-  exit(EXIT_FAILURE);
-}
+namespace ft {
+
+class exception : public std::exception {
+private:
+  std::string message;
+
+public:
+  exception(const std::string &message) : message(message) {}
+  const char *what() const noexcept override { return this->message.c_str(); }
+};
+
+class Server {
+private:
+  int fd;
+
+public:
+  Server(int port) noexcept(false) {
+    if (port <= 0 || port > 65535)
+      throw ft::exception("Invalid port");
+    this->fd = socket(AF_INET6, SOCK_STREAM, 0);
+    if (this->fd < 0) {
+      throw ft::exception("socket()");
+    }
+    try {
+      {
+        int on = 1;
+        if (setsockopt(this->fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0)
+          throw ft::exception("setsockopt()");
+      }
+
+      if (fcntl(this->fd, F_SETFL, fcntl(this->fd, F_GETFL, 0) | O_NONBLOCK) ==
+          -1)
+        throw ft::exception("fcntl()");
+
+      {
+        struct sockaddr_in6 addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin6_family = AF_INET6;
+        memcpy(&addr.sin6_addr, &in6addr_any, sizeof(in6addr_any));
+        addr.sin6_port = htons(port);
+        if (bind(this->fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+          throw ft::exception("bind()");
+      }
+    } catch (const std::exception &e) {
+      close(this->fd);
+      throw e;
+    }
+  }
+  ~Server() {
+    if (this->fd >= 0)
+      close(this->fd);
+  }
+  Server(const ft::Server &copy) = delete;
+  Server(Server &&move) noexcept : fd(move.fd) { move.fd = -1; }
+  Server &operator=(const ft::Server &copy) = delete;
+  Server &operator=(Server &&other) noexcept {
+    close(this->fd);
+    this->fd = other.fd;
+    other.fd = -1;
+    return *this;
+  }
+
+  int getFd() const { return fd; } // TODO: remove
+
+  void listen(int queueSize) {
+    if (::listen(this->fd, queueSize) < 0)
+      throw ft::exception("listen()");
+  }
+};
+
+} // namespace ft
 
 int main(int argc, char *argv[]) {
   if (argc != 2) {
@@ -23,37 +91,13 @@ int main(int argc, char *argv[]) {
     exit(EXIT_SUCCESS);
   }
   const int openMax = sysconf(_SC_OPEN_MAX);
-  const int port = atoi(argv[1]);
-  if (port <= 0 || port > 65535)
-    die("Invalid port number");
+  ft::Server server(atoi(argv[1]));
+  server.listen(32);
 
-  const int serverFd = socket(AF_INET6, SOCK_STREAM, 0);
-  if (serverFd < 0)
-    die("Failed to create socket");
+  struct pollfd *fds = new struct pollfd[openMax];
+  memset(fds, 0, sizeof(fds[0]) * openMax);
 
-  {
-    int on = 1;
-    if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, (char *)&on,
-                   sizeof(on)) < 0)
-      die("Failed to set socket option");
-  }
-  if (fcntl(serverFd, F_SETFL, fcntl(serverFd, F_GETFL, 0) | O_NONBLOCK) == -1)
-    die("Failed to make fd nonblock");
-  {
-    struct sockaddr_in6 addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin6_family = AF_INET6;
-    memcpy(&addr.sin6_addr, &in6addr_any, sizeof(in6addr_any));
-    addr.sin6_port = htons(port);
-    if (bind(serverFd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-      die("Failed to bind");
-  }
-  if (listen(serverFd, 32) < 0)
-    die("Failed to listen");
-
-  struct pollfd fds[openMax];
-  memset(fds, 0, sizeof(fds));
-
+  const int serverFd = server.getFd();
   fds[0].fd = serverFd;
   fds[0].events = POLLIN;
   nfds_t nfds = 1;
@@ -65,7 +109,7 @@ int main(int argc, char *argv[]) {
     const ssize_t pollSize = poll(fds, nfds, timeout);
 
     if (pollSize < 0)
-      die("Error on poll");
+      throw ft::exception("Error on poll");
 
     if (pollSize == 0) {
       std::cout << "Timeout occurred. bye!" << std::endl;
@@ -83,7 +127,7 @@ int main(int argc, char *argv[]) {
           newClientFd = accept(serverFd, NULL, NULL);
           if (newClientFd < 0) {
             if (errno != EWOULDBLOCK)
-              die("Error on accept");
+              throw ft::exception("Error on accept");
             break;
           }
           fds[nfds].fd = newClientFd;

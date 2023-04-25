@@ -1,5 +1,5 @@
 CXX = clang++
-CXXFLAGS = -Wall -Wextra -Werror -std=c++98 -fsanitize=address,undefined
+CXXFLAGS = -Wall -Wextra -Werror -std=c++20 -g -fsanitize=address,undefined
 LDFLAGS = -fsanitize=address,undefined
 
 OBJS = main.o
